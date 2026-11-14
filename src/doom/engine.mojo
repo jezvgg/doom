@@ -1,0 +1,14 @@
+from std.math import floor
+
+from map import Map
+from player import Player
+from raycaster import Raycaster
+
+@fieldwise_init
+struct Engine:
+    comptime min_distance = 0.05
+    var map: Map
+    var caster: Raycaster
+
+    def check_collision(self, player: Player) -> Bool:
+        return self.caster.cast(player.ray) < 0.1
