@@ -3,18 +3,16 @@ from std.python import Python, PythonObject
 from engine import Engine
 from map import Map
 from player import Player
-from raycaster import Raycaster
 from ray import Ray
+from raycaster import Raycaster
+from render import Renderer
 from screen import Screen
+from texture import Texture
 
 # во сколько раз увеличить 128x128 при показе в окне
 comptime SCALE: Int = 4
 
-# сколько ступеней яркости пишет raycaster: Screen.value = Int8((depth - distance) / depth * GRAY_SHADES).
-# 0 — пусто, 1..GRAY_SHADES — стена. В картинке ступень тянется на 0..255.
-comptime GRAY_SHADES: Int = 16
-
-# "00", "01", ... "ff" — hex-пара по индексу палитры (0..255)
+# "00", "01", ... "ff" — hex-пара по значению байта (0..255)
 comptime HEXPAIRS: String = (
     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
     "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
@@ -33,55 +31,99 @@ comptime KEYS_PY: String = "lambda pg: (lambda ks: ''.join('1' if ks[k] else '0'
 comptime QUIT_PY: String = "lambda pg: any(e.type == pg.QUIT or (e.type == pg.KEYDOWN and e.key == pg.K_ESCAPE) for e in pg.event.get())"
 
 
+def hsv_to_rgb(hue: Int, saturation: Int, brightness: Int) -> Tuple[Int, Int, Int]:
+    """HSV (0..255 в каждом канале) -> RGB (0..255).
+
+    hue 0..255 — полный круг (0 = красный, 85 = зелёный, 170 = синий).
+    saturation == 0 даёт серый: (v, v, v) — именно этот путь и работает сейчас,
+    пока рендер пишет только яркость.
+    """
+    var v = brightness
+    if v < 0:
+        v = 0
+    elif v > 255:
+        v = 255
+    var s = saturation
+    if s <= 0:
+        return (v, v, v)
+    if s > 255:
+        s = 255
+
+    # hue -> окружность из 6 секторов; f — положение внутри сектора 0..1
+    var h6 = Float64(hue % 256) / 256.0 * 6.0
+    var sector = Int(h6) % 6
+    var f = h6 - Float64(Int(h6))
+
+    # p — самый тёмный канал, q/t — промежуточные (стандартная формула HSV->RGB)
+    var p = v * (255 - s) // 255
+    var q = v * (255 - Int(Float64(s) * f)) // 255
+    var t = v * (255 - Int(Float64(s) * (1.0 - f))) // 255
+
+    if sector == 0:
+        return (v, t, p)
+    elif sector == 1:
+        return (q, v, p)
+    elif sector == 2:
+        return (p, v, t)
+    elif sector == 3:
+        return (p, q, v)
+    elif sector == 4:
+        return (t, p, v)
+    return (v, p, q)
+
+
 def screen_to_image(
     fromhex: PythonObject,
     frombytes: PythonObject,
     screen: Screen,
 ) raises -> PythonObject:
-    """Screen -> pygame.Surface 128x128, ровно один байт (индекс палитры) на пиксель.
+    """Screen -> pygame.Surface 128x128, три байта (RGB) на пиксель.
 
-    Пиксель (col, row) берём из screen.value[col][row]: так объявлен Screen —
-    внешний массив по ширине (столбцы), внутренний по высоте (строки).
-    Байты собираем в порядке строк (сверху вниз, слева направо) — этого ждёт image.frombytes.
+    Пиксель (col, row) берём из screen.hue/saturation/value[row][col] —
+    внешний массив по высоте (строки), внутренний по ширине (столбцы), как
+    объявлено в Screen. Байты собираем в порядке строк (сверху вниз, слева
+    направо) — этого ждёт image.frombytes с форматом "RGB".
 
-    Почему hex: Mojo умеет отдать в Python только строку; bytes.fromhex превращает
-    ASCII-пары в настоящий bytes за ~0.01 мс на 16384 пикселя.
-    Когда появятся текстуры — сюда же приходит номер цвета/текселя, а set_palette
-    раскрашивает индексы настоящей палитрой, без пересборки формата.
+    Каналы читаются как `Int(x) & 0xFF`: это одинаково работает и с UInt8,
+    и с Int8 (где 200 лежит как -56), так что переполнение знака не превращает
+    светлые участки в чёрные.
+
+    Почему hex, а не список: Mojo умеет отдать в Python только строку, а
+    bytes.fromhex раскладывает ASCII-пары в настоящий bytes быстрее, чем
+    PythonObject-кортеж из 49152 чисел. Палитра больше не нужна — цвет
+    считается здесь, поэтому set_palette из кадра убран.
     """
     var hex = String()
     for row in range(Screen.height):
         for col in range(Screen.width):
-            var level = Int(screen.value[col][row])
-            var idx = level * 255 // GRAY_SHADES
-            if idx < 0:
-                idx = 0
-            elif idx > 255:
-                idx = 255
-            var begin = idx * 2
-            hex += HEXPAIRS[byte=begin:begin + 2]
+            var r, g, b = hsv_to_rgb(
+                Int(screen.hue[row][col]) & 0xFF,
+                Int(screen.saturation[row][col]) & 0xFF,
+                Int(screen.value[row][col]) & 0xFF,
+            )
+            hex += HEXPAIRS[byte=r * 2:r * 2 + 2]
+            hex += HEXPAIRS[byte=g * 2:g * 2 + 2]
+            hex += HEXPAIRS[byte=b * 2:b * 2 + 2]
     var raw = fromhex(hex)
-    return frombytes(raw, Python.tuple(Screen.width, Screen.height), "P")
+    return frombytes(raw, Python.tuple(Screen.width, Screen.height), "RGB")
 
 
 def draw_pixels(
     win: PythonObject,
     fromhex: PythonObject,
     frombytes: PythonObject,
-    set_palette: PythonObject,
     scale: PythonObject,
     screen: Screen,
 ) raises:
-    """Один кадр: пиксели Screen -> поверхность 128x128 -> растяжка SCALE -> окно."""
+    """Один кадр: Screen -> поверхность 128x128 -> растяжка SCALE -> окно."""
     var img = screen_to_image(fromhex, frombytes, screen)
-    _ = set_palette(img)
     var big = scale(img, Python.tuple(Screen.width * SCALE, Screen.height * SCALE))
     _ = win.blit(big, Python.tuple(0, 0))
 
 
 def main() raises:
     var player = Player(Ray(4.5, 4.5, 0.0))
-    var caster = Raycaster(Map())
+    var renderer = Renderer(Raycaster(Map()), Texture())
     var engine = Engine(Map(), Raycaster(Map()))
 
     # ---------- окно pygame ----------
@@ -93,14 +135,12 @@ def main() raises:
     # Python-функции создаём один раз, а не каждый кадр
     var fromhex = Python.evaluate("bytes.fromhex")
     var frombytes = pg.image.frombytes
-    # индексы 0..255 -> серый: 0 = чёрный фон, 255 = белый. Для текстур заменить на свою палитру.
-    var set_palette = Python.evaluate("lambda img: img.set_palette([(i, i, i) for i in range(256)])")
     var scale = pg.transform.scale
 
     var keys = Python.evaluate(KEYS_PY)
     var quit_requested = Python.evaluate(QUIT_PY)
 
-    draw_pixels(win, fromhex, frombytes, set_palette, scale, caster.render(player))
+    draw_pixels(win, fromhex, frombytes, scale, renderer.render_view(player))
     _ = pg.display.flip()
 
     # ---------- игровой цикл ----------
@@ -133,7 +173,7 @@ def main() raises:
             changed = True
 
         if changed:
-            draw_pixels(win, fromhex, frombytes, set_palette, scale, caster.render(player))
+            draw_pixels(win, fromhex, frombytes, scale, renderer.render_view(player))
             _ = pg.display.flip()
 
         _ = pg.time.delay(16)

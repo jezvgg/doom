@@ -12,5 +12,4 @@ struct Engine:
     var caster: Raycaster
 
     def check_collision(self, player: Player) -> Bool:
-        var mut_player = player.copy()
-        return self.caster.cast(mut_player.ray.copy()) < 0.1
+        return self.caster.cast(player.ray.copy()).distance < 0.1

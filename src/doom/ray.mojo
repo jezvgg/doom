@@ -8,15 +8,10 @@ struct Ray(Copyable, Movable):
     var angle: Float64
 
 
-struct RayDDA:
-    var x: RayAxis
-    var y: RayAxis
-    var angle: Float64
-
-    def __init__(out self, var ray: Ray):
-        self.angle = ray.angle
-        self.x = RayAxis(ray.x, cos(ray.angle))
-        self.y = RayAxis(ray.y, sin(ray.angle))
+@fieldwise_init
+struct Hit(Copyable, Movable):
+    var ray: Ray
+    var distance: Float64
 
 
 struct RayAxis(Copyable, Movable):

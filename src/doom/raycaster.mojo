@@ -1,16 +1,16 @@
-from std.math import floor
+from std.math import cos, floor, sin
 from std.collections import BitSet
 
 from map import Map
 from player import Player
 from screen import Screen
-from ray import Ray, RayDDA
+from ray import Ray, RayAxis, Hit
 
 
 
 struct Raycaster:
     comptime FOV: Float64 = 3.14159 / 3.0
-    comptime depth: Float64 = 5.0
+    comptime depth: Float64 = 8.0
     var map: Map
 
 
@@ -18,27 +18,29 @@ struct Raycaster:
         self.map = map^
 
 
-    def cast(self, var _ray: Ray) -> Float64:
-        var ray = RayDDA(_ray^)
+    def cast(self, var ray: Ray) -> Hit:
+        var axisx = RayAxis(ray.x, cos(ray.angle))
+        var axisy = RayAxis(ray.y, sin(ray.angle))
+
         var dist: Float64 = 0
-        while not (self.map[ray.x.pos, ray.y.pos] or dist >= self.depth):
-            if ray.x.distance < ray.y.distance:
-                dist = ray.x.update()
+        while not (self.map[axisx.pos, axisy.pos] or dist >= self.depth):
+            if axisx.distance < axisy.distance:
+                dist = axisx.update()
             else:
-                dist = ray.y.update()
-        return min(dist, self.depth)
+                dist = axisy.update()
+
+        dist = min(dist, self.depth)
+        ray.x += cos(ray.angle) * dist
+        ray.y += sin(ray.angle) * dist
+        return Hit(ray^, dist)
 
 
-    def render(self, player: Player) -> Screen:
-        var screen = Screen()
+    def cast_view(self, player: Player) -> Array[Hit, Screen.width]:
+        var hits = Array[Hit, Screen.width](uninitialized=True)
 
-        for i in range(screen.width):
+        for i in range(Screen.width):
             var ray = player.ray.copy()
-            ray.angle -= (self.FOV / 2.0) - ((self.FOV / screen.width) * Float64(i))
-            var distance = self.cast(ray^)
-            var _floor = Int(Float64(screen.height) / 2.0 - Float64(screen.height) / distance / 2.0)
-            for height in range(screen.height):
-                if (height > _floor and height <= screen.height - _floor and distance <= self.depth):
-                    screen.value[i][height] = Int8((self.depth - distance) / self.depth * 16.0)
+            ray.angle -= (self.FOV / 2.0) - ((self.FOV / Screen.width) * Float64(i))
+            hits[i] = self.cast(ray^)
 
-        return screen^
+        return hits^

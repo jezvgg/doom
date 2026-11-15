@@ -1,0 +1,51 @@
+@fieldwise_init
+struct Color(Copyable, Movable):
+    var hue: UInt8
+    var saturation: UInt8
+    var value: UInt8
+
+    comptime NONE = Color(0, 0, 0)
+    comptime SKY = Self.NONE
+    comptime FLOOR = Self.NONE
+
+
+@fieldwise_init
+struct Texture(Copyable, Movable):
+    comptime size = 16
+    comptime colors = 8
+    var texture: Array[Array[UInt8, Self.size], Self.size]  # индексы палитры
+    var palette: Array[Color, Self.colors]
+
+    def __init__(out self):
+        self.texture = [
+            [ 7,  6,  6,  6,  6,  6,  5,  1,  5,  5,  5,  5,  5,  5,  4,  1],
+            [ 6,  5,  5,  5,  5,  5,  4,  1,  4,  4,  4,  4,  4,  4,  3,  1],
+            [ 6,  5,  5,  5,  5,  5,  4,  1,  4,  4,  4,  4,  4,  4,  3,  1],
+            [ 6,  5,  5,  5,  5,  5,  4,  1,  4,  4,  4,  4,  4,  4,  3,  1],
+            [ 6,  5,  5,  5,  5,  5,  4,  1,  4,  4,  4,  4,  4,  4,  3,  1],
+            [ 6,  5,  5,  5,  5,  5,  4,  1,  4,  4,  4,  4,  4,  4,  3,  1],
+            [ 4,  4,  4,  4,  4,  4,  3,  1,  3,  2,  2,  2,  2,  2,  2,  1],
+            [ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+            [ 5,  5,  4,  1,  7,  7,  7,  7,  7,  7,  6,  1,  6,  6,  6,  6],
+            [ 4,  4,  3,  1,  6,  6,  6,  6,  6,  6,  5,  1,  5,  5,  5,  5],
+            [ 4,  4,  3,  1,  6,  6,  6,  6,  6,  6,  5,  1,  5,  5,  5,  5],
+            [ 4,  4,  3,  1,  6,  6,  6,  6,  6,  6,  5,  1,  5,  5,  5,  5],
+            [ 4,  4,  3,  1,  6,  6,  6,  6,  6,  6,  5,  1,  5,  5,  5,  5],
+            [ 4,  4,  3,  1,  6,  6,  6,  6,  6,  6,  5,  1,  5,  5,  5,  5],
+            [ 3,  3,  2,  1,  5,  4,  4,  4,  4,  4,  3,  1,  4,  3,  3,  3],
+            [ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+        ]
+
+        self.palette = [
+            Color(0, 0, 56),  # 0 — шов горизонтальный
+            Color(0, 0, 64),  # 1 — шов вертикальный
+            Color(0, 255, 150),  # 2 — кирпич тёмный
+            Color(0, 255, 164),  # 3 — кирпич
+            Color(0, 255, 178),  # 4 — кирпич светлее
+            Color(0, 255, 190),  # 5 — кирпич светлый
+            Color(0, 255, 204),  # 6 — кирпич яркий
+            Color(0, 255, 214),  # 7 — кирпич грань
+        ]
+
+    def __getitem__(self, height: Float64, width: Int) -> Color:
+        return self.palette[self.texture[Int(height * Self.size) & 15][width].copy()].copy()
