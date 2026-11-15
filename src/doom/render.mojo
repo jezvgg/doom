@@ -23,7 +23,8 @@ struct Renderer:
                 (not side and sin(hit.ray.angle) < 0.0):
                 texX = 1.0 - texX
 
-            var _floor = Int(Float64(screen.height) / 2.0 - Float64(screen.height) / hit.distance / 2.0)
+            var perp_distance = hit.distance * cos(hit.ray.angle - player.ray.angle)
+            var _floor = Int(Float64(screen.height) / 2.0 - Float64(screen.height) / perp_distance / 2.0)
             var wall_height = screen.height - _floor * 2
 
             for height in range(screen.height):
