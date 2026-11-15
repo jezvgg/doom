@@ -27,8 +27,8 @@ struct Map:
         ).eq(1))
 
     def __getitem__(self, x: Int, y: Int) -> Bool:
-        if x <= 0 or x >= self.size or \
-           y <= 0 or y >= self.size:
+        if x < 0 or x >= self.size or \
+           y < 0 or y >= self.size:
            return False
 
         return self.map.test(y * self.size + x)

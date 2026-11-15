@@ -4,6 +4,7 @@ from map import Map
 from player import Player
 from raycaster import Raycaster
 
+
 @fieldwise_init
 struct Engine:
     comptime min_distance = 0.05
@@ -11,4 +12,5 @@ struct Engine:
     var caster: Raycaster
 
     def check_collision(self, player: Player) -> Bool:
-        return self.caster.cast(player.ray) < 0.1
+        var mut_player = player.copy()
+        return self.caster.cast(mut_player.ray.copy()) < 0.1
