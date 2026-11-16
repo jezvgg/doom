@@ -30,7 +30,7 @@ struct PlayerTexture(Texture):
         ]
 
         self.palette = [
-            Color(0, 0, 0),  # 0 — фон
+            Color(0, 0, 0, True),  # 0 — фон, прозрачный
             Color(15, 200, 110),  # 1 — волосы, тёмно-рыжие
             Color(25, 130, 225),  # 2 — кожа
             Color(170, 200, 205),  # 3 — футболка, синяя

@@ -38,9 +38,10 @@ struct Renderer[T: Texture](Movable):
 
         # Entities drawing
         # Player view
-        sort(self.caster.map[].entities,
-            cmp_fn = lambda (p1: Player, p2: Player) -> Float64:
-            sqrt((player.ray.x - p1.ray.x) ** 2 + (player.ray.y - p1.ray.y) ** 2) * cos(player.ray.angle - p1.ray.angle)
+        sort(self.caster.map[].entities[:],
+            lambda (p1: Player, p2: Player) -> Bool:
+            ((player.ray.x - p1.ray.x) ** 2 + (player.ray.y - p1.ray.y) ** 2) >
+            ((player.ray.x - p2.ray.x) ** 2 + (player.ray.y - p2.ray.y) ** 2)
             )
 
         for entity in self.caster.map[].entities:
@@ -52,24 +53,30 @@ struct Renderer[T: Texture](Movable):
             var depth   =  dx * ca + dy * sa
             var lateral = -dx * sa + dy * ca
 
-            if depth <= 0.2 or depth >= 8.0: continue
+            if depth <= 0.2 or depth >= self.caster.depth: continue
 
             var centerX = (atan2(lateral, depth) + self.caster.FOV / 2.0) / self.caster.FOV * Float64(screen.width)
-            var sprite_width = atan2(entity.width / 2.0, depth) / self.catser.FOV * Float64(Screen.width)
+            var sprite_width = 2.0 * atan2(entity.width / 2.0, depth) / self.caster.FOV * Float64(Screen.width)
+            var left = centerX - sprite_width / 2.0
 
-            for width in range(centerX - sprite_width, centerX + sprite_width):
-                if depth > hits[i].distance * cos(hits[i].ray.angle - player.ray.angle):
+            for width in range(Int(left), Int(left + sprite_width)):
+                if width < 0 or width >= Screen.width:
+                    continue
+                if depth > hits[width].distance * cos(hits[width].ray.angle - player.ray.angle):
                     continue
 
                 var bottom = Float64(Screen.height) / 2.0 + Float64(Screen.height) / (2.0 * depth)
                 var sprite_height = entity.width * Float64(Screen.height) / depth
-                var top = _floor - sprite_height
-                var texX = (width - (centerX - sprite_width)) / sprite_width
+                var top = bottom - sprite_height
+                var texX = (Float64(width) - left) / sprite_width
 
-                for height in range(top, bottom):
-                    var texY = ((height - _floor) * entity.texture.height // sprite_height) & 15
-                    var color = entity.texture(texX, texY)
+                for height in range(Int(top), Int(bottom)):
+                    if height < 0 or height >= Screen.height:
+                        continue
+                    var texY = Int((Float64(height) - top) * 16.0 / sprite_height) & 15
+                    var color = entity.texture(texY, texX)
+                    if color.invisible: continue
                     color.value = UInt8((self.caster.depth - depth) / self.caster.depth * Float64(color.value))
-                    screen[height, i] = color
+                    screen[height, width] = color
 
         return screen^
