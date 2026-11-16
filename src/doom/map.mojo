@@ -1,10 +1,14 @@
 from std.simd import SIMD
 from std.collections import BitSet
 
+from entity import Entity
+
+
 @fieldwise_init
-struct Map:
+struct Map[T: Entity]:
     comptime size = 16
     var map: BitSet[Self.size * Self.size]
+    var entities: List[Self.T]
 
     def __init__(out self):
         self.map = BitSet(SIMD[.int8, self.size * self.size](
@@ -25,6 +29,7 @@ struct Map:
             1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
         ).eq(1))
+        self.entities = []
 
     def __getitem__(self, x: Int, y: Int) -> Bool:
         if x < 0 or x >= self.size or \

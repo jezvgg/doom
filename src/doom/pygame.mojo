@@ -1,13 +1,15 @@
 from std.python import Python, PythonObject
+from std.memory import ArcPointer
 
 from engine import Engine
 from map import Map
 from player import Player
-from ray import Ray
-from raycaster import Raycaster
-from render import Renderer
-from screen import Screen
-from texture import Texture
+from render.ray import Ray
+from render.raycaster import Raycaster
+from render.render import Renderer
+from render.screen import Screen
+from render.textures.bricks import BricksTexture
+from render.textures.player import PlayerTexture
 
 # во сколько раз увеличить 128x128 при показе в окне
 comptime SCALE: Int = 4
@@ -123,8 +125,10 @@ def draw_pixels(
 
 def main() raises:
     var player = Player(Ray(4.5, 4.5, 0.0))
-    var renderer = Renderer(Raycaster(Map()), Texture())
-    var engine = Engine(Map(), Raycaster(Map()))
+    var map = ArcPointer(Map[Player]())
+    map[].entities.append(Player(Ray(4.5, 4.5, 0.0)))
+    var renderer = Renderer(Raycaster(map), BricksTexture())
+    var engine = Engine(map, Raycaster(map))
 
     # ---------- окно pygame ----------
     var pg = Python.import_module("pygame")

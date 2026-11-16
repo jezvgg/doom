@@ -1,19 +1,12 @@
-@fieldwise_init
-struct Color(Copyable, Movable):
-    var hue: UInt8
-    var saturation: UInt8
-    var value: UInt8
-
-    comptime NONE = Color(0, 0, 0)
-    comptime SKY = Self.NONE
-    comptime FLOOR = Self.NONE
+from .texture import Texture
+from .color import Color
 
 
 @fieldwise_init
-struct Texture(Copyable, Movable):
+struct BricksTexture(Texture):
     comptime size = 16
     comptime colors = 8
-    var texture: Array[Array[UInt8, Self.size], Self.size]  # индексы палитры
+    var texture: Array[Array[UInt8, Self.size], Self.size]
     var palette: Array[Color, Self.colors]
 
     def __init__(out self):
@@ -47,5 +40,5 @@ struct Texture(Copyable, Movable):
             Color(0, 255, 214),  # 7 — кирпич грань
         ]
 
-    def __getitem__(self, height: Float64, width: Int) -> Color:
-        return self.palette[self.texture[Int(height * Self.size) & 15][width].copy()].copy()
+    def __getitem__(self, x: Float64, y: Int) -> Color:
+        return self.palette[self.texture[y][Int(x * Self.size) & 15].copy()].copy()

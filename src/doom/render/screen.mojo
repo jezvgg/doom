@@ -1,4 +1,4 @@
-from texture import Color
+from .textures.color import Color
 
 
 @fieldwise_init
@@ -9,6 +9,7 @@ struct Screen:
     var hue: Array[Self.Row, Self.height]
     var saturation: Array[Self.Row, Self.height]
     var value: Array[Self.Row, Self.height]
+
 
     def __init__(out self):
         self.hue = Array[Self.Row, Self.height](fill=Self.Row(fill=0))

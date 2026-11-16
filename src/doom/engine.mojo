@@ -1,14 +1,15 @@
 from std.math import floor
+from std.memory import ArcPointer
 
 from map import Map
 from player import Player
-from raycaster import Raycaster
+from render.raycaster import Raycaster
 
 
 @fieldwise_init
 struct Engine:
     comptime min_distance = 0.05
-    var map: Map
+    var map: ArcPointer[Map[Player]]
     var caster: Raycaster
 
     def check_collision(self, player: Player) -> Bool:
