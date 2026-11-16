@@ -2,6 +2,9 @@
 
 ![Screenshot of gameplay](./gameplay_screenshot.png)
 
+
+[играйте онлайн](https://doom.jezv.ru)
+
 ```python
 from doom import export as ext
 
@@ -18,8 +21,6 @@ if not engine.check_collision(candidate):
 hex_rgb = renderer.render(player)      # 128*128*6 символов
 ext.Renderer.width(), ext.Renderer.height()
 ```
----
-doom.jezv.ru
 
 ## Сборка и запуск
 ```bash
