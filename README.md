@@ -18,6 +18,8 @@ if not engine.check_collision(candidate):
 hex_rgb = renderer.render(player)      # 128*128*6 символов
 ext.Renderer.width(), ext.Renderer.height()
 ```
+---
+doom.jezv.ru
 
 ## Сборка и запуск
 ```bash
