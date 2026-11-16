@@ -5,7 +5,7 @@ from entity import Entity
 
 
 @fieldwise_init
-struct Map[T: Entity]:
+struct Map[T: Entity](Writable):
     comptime size = 16
     var map: BitSet[Self.size * Self.size]
     var entities: List[Self.T]

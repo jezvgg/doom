@@ -7,7 +7,7 @@ from render.raycaster import Raycaster
 
 
 @fieldwise_init
-struct Engine:
+struct Engine(Writable):
     comptime min_distance = 0.05
     var map: ArcPointer[Map[Player]]
     var caster: Raycaster

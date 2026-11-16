@@ -2,7 +2,7 @@ from .textures.color import Color
 
 
 @fieldwise_init
-struct Screen:
+struct Screen(Writable):
     comptime height = 128
     comptime width = 128
     comptime Row = Array[UInt8, Self.width]

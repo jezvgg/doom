@@ -2,19 +2,19 @@ from std.math import cos, sin
 
 
 @fieldwise_init
-struct Ray(Copyable, Movable):
+struct Ray(Copyable, Movable, Writable):
     var x: Float64
     var y: Float64
     var angle: Float64
 
 
 @fieldwise_init
-struct Hit(Copyable, Movable):
+struct Hit(Copyable, Movable, Writable):
     var ray: Ray
     var distance: Float64
 
 
-struct RayAxis(Copyable, Movable):
+struct RayAxis(Copyable, Movable, Writable):
     var pos: Int
     var direction: Float64
     var step: Int

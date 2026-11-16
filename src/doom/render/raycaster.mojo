@@ -8,7 +8,7 @@ from .ray import Ray, RayAxis, Hit
 
 
 
-struct Raycaster:
+struct Raycaster(Writable):
     comptime FOV: Float64 = 3.14159 / 3.0
     comptime depth: Float64 = 8.0
     var map: ArcPointer[Map[Player]]

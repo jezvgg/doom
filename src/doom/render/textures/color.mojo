@@ -1,4 +1,4 @@
-struct Color(Copyable, Movable):
+struct Color(Copyable, Movable, Writable):
     var hue: UInt8
     var saturation: UInt8
     var value: UInt8

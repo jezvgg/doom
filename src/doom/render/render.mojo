@@ -7,7 +7,7 @@ from .textures.texture import Texture
 
 
 @fieldwise_init
-struct Renderer[T: Texture](Movable):
+struct Renderer[T: Texture](Movable, Writable):
     var caster: Raycaster
     var texture: Self.T
 
