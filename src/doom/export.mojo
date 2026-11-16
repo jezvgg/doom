@@ -85,6 +85,10 @@ struct PyMap:
         return PythonObject(alloc=self_ptr[][].entities[Int(py=index_obj)].copy())
 
     @staticmethod
+    def size() raises -> PythonObject:
+        return PythonObject(LevelMap.size)
+
+    @staticmethod
     def clear_entities(self_ptr: Pointer[mut=True, MapArg, MutUnsafeAnyOrigin]) raises:
         self_ptr[][].entities.clear()
 
@@ -214,6 +218,7 @@ def PyInit_export() abi("C") -> PythonObject:
             .def_method[PyMap.entities_count]("entities_count")
             .def_method[PyMap.entity]("entity")
             .def_method[PyMap.clear_entities]("clear_entities")
+            .def_staticmethod[PyMap.size]("size")
         )
         _ = (
             m.add_type[Player]("Player")

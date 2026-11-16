@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>doom.mojo — multiplayer</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh;
+    background: #0d0f13; color: #c9d1d9;
+    font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    display: grid; place-items: center;
+  }
+  .app { display: grid; gap: 12px; padding: 16px; }
+  canvas {
+    width: min(88vw, 74vh); aspect-ratio: 1; display: block;
+    image-rendering: pixelated;      /* 128x128 растягиваем без сглаживания */
+    background: #000; border: 1px solid #2a3038; border-radius: 6px;
+  }
+  .hud { display: flex; gap: 12px; justify-content: space-between; opacity: .85; }
+  #status::before { content: "● "; color: #d29922; }
+  #status.live::before { color: #3fb950; }
+  kbd { background: #1b2027; border: 1px solid #2a3038; border-radius: 4px; padding: 0 4px; }
+</style>
+</head>
+<body>
+  <div class="app">
+    <canvas id="view" width="128" height="128"></canvas>
+    <div class="hud">
+      <span id="status">connecting…</span>
+      <span id="stats"></span>
+    </div>
+    <div class="hud"><span><kbd>W</kbd><kbd>S</kbd> вперёд/назад · <kbd>A</kbd><kbd>D</kbd> поворот</span><span id="name"></span></div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
