@@ -25,9 +25,20 @@
     python -m web.server            # http://127.0.0.1:8000
 """
 
+import array
 import asyncio
 import time
 from pathlib import Path
+
+try:
+    # очередь отправки ядра (TIOCOUTQ) — только Linux, там и живёт сервер
+    import fcntl
+    import termios
+
+    _TIOCOUTQ = getattr(termios, "TIOCOUTQ", None)
+except ImportError:  # pragma: no cover — не POSIX: останется только буфер транспорта
+    fcntl = None
+    _TIOCOUTQ = None
 
 import uvicorn
 from litestar import Litestar, MediaType, Response, WebSocket, get, websocket
@@ -68,9 +79,10 @@ async def app_js() -> Response:
 
 @websocket("/ws")
 async def game_socket(socket: WebSocket) -> None:
-    """Принимает ввод игрока; кадры отправляет фоновый тик-цикл."""
+    """Принимает ввод игрока; кадры отправляет отправитель сессии."""
     await socket.accept()
     session = world.join(socket, socket.query_params.get("name", ""))
+    session.sender = asyncio.create_task(sender_loop(session))
     try:
         while True:
             message = await socket.receive_json()
@@ -79,6 +91,151 @@ async def game_socket(socket: WebSocket) -> None:
         pass
     finally:
         world.leave(session.id)
+
+
+# ---------------------------------------------------------------------------
+# отправка кадров: своя задача на сессию, тик в сокеты не пишет
+# ---------------------------------------------------------------------------
+#
+# Раньше тик делал `await socket.send_bytes(frame)` по очереди на каждую
+# сессию. Если чей-то канал встал (потеря пакетов, спящая вкладка, мобильный
+# интернет), этот `await` блокировал тик — и замирали все, а отставший клиент
+# получал потом пачку «прошлых» кадров.
+#
+# Теперь тик только кладёт кадр в ячейку сессии (`Session.push`, не ждёт),
+# а отправляет отдельная задача. Отставший клиент выбрасывает кадры: картинка
+# у него дёргается, зато остаётся в реальном времени и никого не тормозит.
+
+# сколько байт может ждать в буфере сокета, прежде чем кадры начинаем выбрасывать:
+# 48 КБ — это примерно секунда видео при штатных 30 кадрах в секунду
+SOFT_BACKLOG = 48 * 1024
+# столько — уже не «плохой канал», а мёртвый сокет: сессию закрываем
+HARD_BACKLOG = 512 * 1024
+# сколько ждём одну запись, прежде чем считать, что канал встал
+SEND_TIMEOUT = 2.0
+# сколько секунд буфер не опускается до SOFT_BACKLOG — клиент не читает
+DEAD_AFTER = 15.0
+# как часто просыпаемся, когда кадров нет (проверка живости)
+IDLE_POLL = 1.0
+
+
+def _find_transport(obj, depth=0, seen=None):
+    """Ищет asyncio-транспорт в объекте сокета (Litestar его не отдаёт наружу).
+
+    Транспорт нужен только для одной цифры — сколько байт ещё висит в очереди
+    отправки. У Litestar он лежит за двумя замыканиями
+    (`socket.send.closure[function].closure[method].__self__.transport`), поэтому
+    и обход рекурсивный. Если фреймворк/сервер поменяются, функция просто вернёт
+    `None` — останется очередь на один кадр и таймаут записи.
+    """
+    if obj is None or depth > 6:
+        return None
+    if seen is None:
+        seen = set()
+    if id(obj) in seen:
+        return None
+    seen.add(id(obj))
+
+    if hasattr(obj, "get_write_buffer_size") and hasattr(obj, "get_extra_info"):
+        return obj
+
+    candidates = []
+    for attr in ("send", "receive", "__self__", "_socket", "transport"):
+        value = getattr(obj, attr, None)
+        if value is not None and value is not obj:
+            candidates.append(value)
+    for cell in getattr(obj, "__closure__", None) or ():
+        try:
+            candidates.append(cell.cell_contents)
+        except ValueError:
+            continue
+
+    for value in candidates:
+        found = _find_transport(value, depth + 1, seen)
+        if found is not None:
+            return found
+    return None
+
+
+def _kernel_queue(transport) -> int:
+    """Байты в очереди отправки ядра: то, что сервер уже записал, но клиент не забрал."""
+    if _TIOCOUTQ is None or fcntl is None:
+        return 0
+    try:
+        raw = transport.get_extra_info("socket")
+        if raw is None:
+            return 0
+        queued = array.array("i", [0])
+        fcntl.ioctl(raw.fileno(), _TIOCOUTQ, queued, True)
+        return int(queued[0])
+    except Exception:
+        # не Linux или сокет уже закрыт: остаётся только буфер транспорта
+        return 0
+
+
+def _backlog(socket) -> int:
+    """Сколько байт отдано в сокет, но ещё не подтверждено клиентом (0 — не знаем).
+
+    Считаем обе очереди: буфер транспорта и очередь ядра (TIOCOUTQ). Вторая
+    важнее: на быстром канале данные сразу уходят в ядро, и буфер транспорта
+    остаётся пустым, даже если клиент давно не читает.
+    """
+    transport = _find_transport(socket)
+    if transport is None:
+        return 0
+    try:
+        buffered = int(transport.get_write_buffer_size())
+    except Exception:
+        buffered = 0
+    return buffered + _kernel_queue(transport)
+
+
+async def sender_loop(session) -> None:
+    """Шлёт кадры одной сессии в её темпе; при перегрузке канала кадры выбрасывает."""
+    socket = session.socket
+    last_ok = time.monotonic()
+    try:
+        while not session.closed:
+            try:
+                frame = await asyncio.wait_for(session.outbox.get(), timeout=IDLE_POLL)
+            except asyncio.TimeoutError:
+                frame = None
+
+            backlog = _backlog(socket)
+            if backlog > HARD_BACKLOG:
+                break
+            if backlog > SOFT_BACKLOG and time.monotonic() - last_ok > DEAD_AFTER:
+                # канал не тянет уже давно: держать сессию смысла нет
+                break
+            if frame is None:
+                continue
+            if backlog > SOFT_BACKLOG:
+                # канал отстаёт: свежий кадр в мусор, а не в очередь на полминуты
+                session.dropped += 1
+                continue
+            try:
+                await asyncio.wait_for(socket.send_bytes(frame), timeout=SEND_TIMEOUT)
+            except (asyncio.TimeoutError, WebSocketDisconnect):
+                break
+            except Exception:
+                # клиент отвалился между тиком и отправкой
+                break
+            last_ok = time.monotonic()
+    finally:
+        session.closed = True
+        if session.dropped:
+            # видно в логах сервиса: у кого канал не тянет и насколько
+            print(
+                f"doom: сессия {session.id} ({session.name}) закрыта, "
+                f"отброшено кадров: {session.dropped}",
+                flush=True,
+            )
+        if world.leave(session.id) is not None:
+            # закрываем сокет, чтобы цикл приёма ввода тоже завершился
+            try:
+                await socket.close()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -96,11 +253,8 @@ async def tick_loop() -> None:
             session = world.sessions.get(session_id)
             if session is None:
                 continue
-            try:
-                await session.socket.send_bytes(frame)
-            except Exception:
-                # клиент мог отвалиться между тиком и отправкой
-                world.leave(session_id)
+            # не ждём отправку: свой темп у каждой сессии
+            session.push(frame)
 
         deadline += period
         delay = deadline - time.perf_counter()

@@ -10,8 +10,10 @@ Mojo-движок используется как библиотека (`from do
 рейкаст считается от позиции конкретного игрока, без копий уровня.
 """
 
+import asyncio
 import math
 import struct
+import time
 import uuid
 
 from doom import export as ext
@@ -19,8 +21,9 @@ from doom import export as ext
 # частота тика и рассылки кадров
 TICK_HZ = 30
 
-# заголовок бинарного кадра: x, y, угол игрока и число игроков в мире
-HEADER = struct.Struct("<fffI")
+# заголовок бинарного кадра: x, y, угол игрока, число игроков в мире,
+# время кадра на сервере (мс по монотонным часам, только для сравнения с приходом)
+HEADER = struct.Struct("<fffII")
 FRAME_WIDTH = 128
 FRAME_HEIGHT = 128
 FRAME_BYTES = HEADER.size + FRAME_WIDTH * FRAME_HEIGHT * 3
@@ -53,9 +56,15 @@ class Input:
 
 
 class Session:
-    """Один подключённый игрок."""
+    """Один подключённый игрок.
 
-    __slots__ = ("id", "name", "player", "socket", "input")
+    Кадры не пишутся в сокет из тика: они попадают в `outbox` — ячейку на один
+    кадр, а отправитель сессии (`web/server.py: sender_loop`) забирает их в её
+    собственном темпе. Поэтому медленный клиент выбрасывает кадры, но не
+    тормозит остальных и не копит «прошлое» в буфере сокета.
+    """
+
+    __slots__ = ("id", "name", "player", "socket", "input", "outbox", "dropped", "closed", "sender")
 
     def __init__(self, session_id, name, player, socket):
         self.id = session_id
@@ -63,6 +72,27 @@ class Session:
         self.player = player
         self.socket = socket
         self.input = Input()
+        self.outbox = asyncio.Queue(maxsize=1)  # только самый свежий кадр
+        self.dropped = 0                        # кадры, выброшенные неотправленными
+        self.closed = False
+        self.sender: asyncio.Task | None = None
+
+    def push(self, frame):
+        """Кладёт кадр в ячейку, выбрасывая непереданный старый. Не ждёт."""
+        try:
+            self.outbox.put_nowait(frame)
+            return
+        except asyncio.QueueFull:
+            pass
+        try:
+            self.outbox.get_nowait()  # устаревший кадр: клиент всё равно его не увидит
+        except asyncio.QueueEmpty:
+            pass
+        self.dropped += 1
+        try:
+            self.outbox.put_nowait(frame)
+        except asyncio.QueueFull:
+            pass
 
 
 def spawn_points(level):
@@ -114,7 +144,11 @@ class World:
     def leave(self, session_id):
         session = self.sessions.pop(session_id, None)
         if session is not None:
+            session.closed = True
             session.input.reset()
+            # отправитель сессии больше не нужен (себя отменять не надо)
+            if session.sender is not None and session.sender is not asyncio.current_task():
+                session.sender.cancel()
             self._sync_entities()
         return session
 
@@ -160,7 +194,10 @@ class World:
         """Кадр для одного игрока: заголовок + RGB-пиксели 128x128."""
         player = session.player
         pixels = bytes.fromhex(self.renderer.render(player))
-        return HEADER.pack(player.x(), player.y(), player.angle(), len(self.sessions)) + pixels
+        # время сервера нужно клиенту, чтобы не рисовать кадры из прошлого,
+        # которые вылились из буфера после обрыва канала
+        stamp = int(time.monotonic() * 1000) & 0xFFFFFFFF
+        return HEADER.pack(player.x(), player.y(), player.angle(), len(self.sessions), stamp) + pixels
 
     def frames(self):
         """Кадры для всех сессий: {id: bytes}."""
