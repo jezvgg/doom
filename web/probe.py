@@ -6,7 +6,6 @@
 """
 
 import asyncio
-import struct
 import time
 
 import websockets
@@ -25,11 +24,14 @@ async def player(name, moves, out):
 
         while True:
             raw = await socket.recv()
+            assert isinstance(raw, bytes), "сервер должен присылать бинарные кадры"
             received += 1
-            x, y, angle, players = struct.unpack_from("<fffI", raw, 0)
+            x, y, angle, players, stamp = HEADER.unpack_from(raw, 0)
             if received == 1:
-                out[name] = {"first": (x, y, angle, players), "bytes": len(raw)}
+                out[name] = {"first": (x, y, angle, players), "bytes": len(raw), "stamp": stamp}
                 assert len(raw) == FRAME_BYTES, f"кадр {len(raw)} != {FRAME_BYTES}"
+            assert stamp >= out[name]["stamp"], "время кадра пошло назад"
+            out[name]["stamp"] = stamp
 
             elapsed = time.perf_counter() - start
             if moves and elapsed >= moves[0][0]:

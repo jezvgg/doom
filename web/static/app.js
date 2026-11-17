@@ -3,8 +3,10 @@
 
 const WIDTH = 128;
 const HEIGHT = 128;
-const HEADER = 16;                 // x, y, angle, players — см. web/world.py
+const HEADER = 20;                 // x, y, angle, players, время кадра — см. web/world.py
 const FRAME_BYTES = HEADER + WIDTH * HEIGHT * 3;
+// насколько кадр может отставать от реальности, чтобы его ещё стоило рисовать
+const MAX_AGE_MS = 250;
 
 const canvas = document.getElementById("view");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -30,6 +32,10 @@ let reconnectTimer = null;
 let frames = 0;
 let fps = 0;
 let fpsSince = performance.now();
+let skipped = 0;                   // кадры из прошлого, которые не рисовали
+let dropped = 0;                   // сколько пропущено за последнее окно
+let clockOffset = null;            // смещение часов сервера и клиента
+let lastX = "-", lastY = "-", lastAngle = "-", lastPlayers = 0;
 
 const playerName = new URLSearchParams(location.search).get("name") || "guest";
 nameLine.textContent = "вы: " + playerName;
@@ -80,6 +86,23 @@ function draw(buffer) {
   if (buffer.byteLength !== FRAME_BYTES) return;
 
   const view = new DataView(buffer);
+  const received = performance.now();
+
+  // Возраст кадра. После обрыва канала буфер выливает пачку «прошлых» кадров:
+  // если отставание больше MAX_AGE_MS, кадр не рисуем — иначе картинка едет
+  // по истории и догоняет реальность секундами.
+  const serverMs = view.getUint32(16, true);
+  if (clockOffset === null || received - serverMs < clockOffset) {
+    clockOffset = received - serverMs; // смещение часов + минимальная задержка сети
+  }
+  const age = received - serverMs - clockOffset;
+  frames++;
+  if (age > MAX_AGE_MS) {
+    skipped++;
+    updateStats();
+    return;
+  }
+
   const x = view.getFloat32(0, true);
   const y = view.getFloat32(4, true);
   const angle = view.getFloat32(8, true);
@@ -96,17 +119,27 @@ function draw(buffer) {
   }
   ctx.putImageData(image, 0, 0);
 
-  frames++;
+  lastX = x.toFixed(2);
+  lastY = y.toFixed(2);
+  lastAngle = angle.toFixed(2);
+  lastPlayers = players;
+  updateStats();
+}
+
+function updateStats() {
   const now = performance.now();
   if (now - fpsSince >= 500) {
     fps = Math.round((frames * 1000) / (now - fpsSince));
     frames = 0;
+    dropped = skipped;
+    skipped = 0;
     fpsSince = now;
   }
 
   statsLine.textContent =
-    `x ${x.toFixed(2)} y ${y.toFixed(2)} ∠ ${angle.toFixed(2)} · ` +
-    `игроков ${players} · ${fps} fps`;
+    `x ${lastX} y ${lastY} ∠ ${lastAngle} · ` +
+    `игроков ${lastPlayers} · ${fps} fps` +
+    (dropped > 0 ? ` · пропущено ${dropped}` : "");
 }
 
 // --------------------------------------------------------------------------
